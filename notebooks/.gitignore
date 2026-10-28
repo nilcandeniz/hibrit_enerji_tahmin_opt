@@ -1,0 +1,19 @@
+# Sanal Ortamlar
+venv/
+.venv/
+env/
+
+# Python ve Jupyter önbellekleri
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Ham ve işlenmiş veri (GitHub kota sınırına takılmamak için)
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# VS Code & Sistem dosyaları
+.vscode/
+.DS_Store
