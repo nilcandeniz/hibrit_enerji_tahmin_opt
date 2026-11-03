@@ -38,6 +38,10 @@ python scripts/train_compare.py --config configs/pvgis_forecast.yaml --tuned res
 python scripts/run_optimization.py --config configs/optimization_pvgis.yaml
 ```
 
+**Optuna notları:** Arama `<output_dir>/tuning/optuna.db` dosyasına kaydedilir; Ctrl+C ile kesip
+aynı komutu tekrar çalıştırırsan kaldığı yerden devam eder. Modeller parça parça da koşulabilir
+(`--only xgboost`, `--only lstm`, `--only gru`); sonuçlar `best_params.json` içinde birleşir.
+
 `pytest -q` — pencereleme/sızıntı, MILP kısıtları, PVGIS ayrıştırma, EPİAŞ okuma, Optuna testleri.
 
 ## Öneri raporu ↔ kod

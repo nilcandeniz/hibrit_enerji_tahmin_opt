@@ -26,7 +26,28 @@ def _sampler(seed: int):
     return optuna.samplers.TPESampler(seed=seed)
 
 
-def tune_xgboost(train: WindowSet, val: WindowSet, n_trials: int, seed: int = 42):
+def _run(study: optuna.Study, objective, n_trials: int, seed: int) -> optuna.Study:
+    """Kesintiye dayanıklı: storage'da zaten biten denemeler sayılır, yalnızca kalanı koşulur."""
+    done_states = (optuna.trial.TrialState.COMPLETE, optuna.trial.TrialState.PRUNED)
+    done = sum(t.state in done_states for t in study.trials)
+    remaining = max(0, n_trials - done)
+    if done:
+        # Aynı seed'le yeniden başlayan örnekleyici önceki denemeleri tekrarlardı -> seed kaydır
+        study.sampler = _sampler(seed + done)
+        print(f"[{study.study_name}] {done} deneme önceden tamamlanmış, {remaining} kaldı")
+
+    def progress(st, tr):
+        best = st.best_value if any(t.state == optuna.trial.TrialState.COMPLETE for t in st.trials) else float("nan")
+        print(f"[{st.study_name}] deneme {tr.number + 1}/{n_trials} {tr.state.name:8s} "
+              f"değer={tr.value if tr.value is not None else float('nan'):.5f}  en iyi={best:.5f}", flush=True)
+
+    if remaining:
+        study.optimize(objective, n_trials=remaining, callbacks=[progress])
+    return study
+
+
+def tune_xgboost(train: WindowSet, val: WindowSet, n_trials: int, seed: int = 42,
+                 storage: str | None = None):
     def objective(trial: optuna.Trial) -> float:
         params = dict(
             n_estimators=trial.suggest_int("n_estimators", 200, 1000, step=100),
@@ -42,13 +63,13 @@ def tune_xgboost(train: WindowSet, val: WindowSet, n_trials: int, seed: int = 42
         return float(np.sqrt(np.mean((pred - val.y_raw) ** 2)))
 
     study = optuna.create_study(direction="minimize", sampler=_sampler(seed),
-                                study_name="xgboost")
-    study.optimize(objective, n_trials=n_trials)
-    return study
+                                study_name="xgboost", storage=storage, load_if_exists=True)
+    return _run(study, objective, n_trials, seed)
 
 
 def tune_rnn(cell: str, train: WindowSet, val: WindowSet, cfg: dict, n_trials: int,
-             seed: int = 42, max_epochs: int = 30, patience: int = 5):
+             seed: int = 42, max_epochs: int = 30, patience: int = 5,
+             storage: str | None = None):
     n_past, n_future = train.x_past.shape[-1], train.x_future.shape[-1]
 
     def objective(trial: optuna.Trial) -> float:
@@ -78,19 +99,21 @@ def tune_rnn(cell: str, train: WindowSet, val: WindowSet, cfg: dict, n_trials: i
 
     study = optuna.create_study(
         direction="minimize", sampler=_sampler(seed), study_name=cell,
-        pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5))
-    study.optimize(objective, n_trials=n_trials)
-    return study
+        pruner=optuna.pruners.MedianPruner(n_startup_trials=5, n_warmup_steps=5),
+        storage=storage, load_if_exists=True)
+    return _run(study, objective, n_trials, seed)
 
 
 def save_results(studies: dict[str, optuna.Study], out_dir: str | Path) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    best = {}
+    f = out / "best_params.json"
+    # --only ile parça parça koşulduğunda önceki modellerin sonuçları silinmesin
+    best = json.loads(f.read_text()) if f.exists() else {}
     for name, st in studies.items():
         best[name] = {"params": st.best_params, "best_value": st.best_value,
                       "n_trials": len(st.trials),
                       "n_pruned": sum(t.state == optuna.trial.TrialState.PRUNED for t in st.trials)}
         st.trials_dataframe().to_csv(out / f"trials_{name}.csv", index=False)
-    (out / "best_params.json").write_text(json.dumps(best, indent=2))
+    f.write_text(json.dumps(best, indent=2))
     return best

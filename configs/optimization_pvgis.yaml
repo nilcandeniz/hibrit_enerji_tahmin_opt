@@ -29,7 +29,7 @@ tank:
 
 prices:
   h2_tl_per_kg: 150.0       # PLACEHOLDER: hidrojen satış fiyatı (duyarlılık analizinde taranır)
-  epias_csv: data/raw/ptf_2023.csv   # EPİAŞ Şeffaflık export'u (csv/xlsx); null -> sentetik PTF
+  epias_csv: data/raw/Piyasa_Takas_Fiyati-01012023-31122023.csv   # EPİAŞ Şeffaflık export'u (csv/xlsx); null -> sentetik PTF
   align_mode: calendar      # calendar: PVGIS ve EPİAŞ aynı gerçek tarihler | cycle: senaryo
 
 imbalance:                  # tahmin hatasının fiyatı (ASSUMPTION: gerçek marjı doğrulayın)
