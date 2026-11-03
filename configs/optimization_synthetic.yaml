@@ -1,0 +1,43 @@
+# MILP karar motoru konfigürasyonu.
+# ÖNEMLİ: "PLACEHOLDER" işaretli değerler varsayımdır; tezde literatür/üretici
+# verisiyle doldurulmalı ve duyarlılık analizine (sensitivity) sokulmalıdır.
+
+predictions_npz: results/synthetic_run/test_predictions.npz   # train_compare.py çıktısı
+output_dir: results/optimization_synthetic
+
+timing:
+  dt_hours: 0.25            # 15 dk adım (PTF saatlik, 4 adıma yayılır)
+
+plant:
+  capacity_kw: auto         # auto = test verisindeki maksimum AC güç
+  grid_limit_ratio: 1.0     # şebeke bağlantı limiti = oran x kapasite
+
+electrolyzer:               # PEM elektrolizör
+  p_max_ratio: 0.20         # PLACEHOLDER: elektrolizör gücü = 0.20 x santral kapasitesi
+  p_min_ratio: 0.10         # PLACEHOLDER: min yük = 0.10 x p_max (PEM tipik %5-20)
+  hhv_kwh_per_kg: 39.4      # H2 üst ısıl değeri
+  efficiency_hhv: 0.72      # PLACEHOLDER: sistem verimi (HHV bazlı) -> ~54.7 kWh/kg
+  startup_cost_tl: 500.0    # PLACEHOLDER: her başlatma maliyeti (TL)
+  var_cost_tl_per_kwh: 0.05 # PLACEHOLDER: bozunma + işletme (TL/kWh elektrolizör enerjisi)
+
+tank:
+  max_hours_full_load: 12.0 # tank kapasitesi = 12 saatlik tam yük üretimi
+  min_fraction: 0.0
+  initial_fraction: 0.20
+  terminal_ge_initial: true # gün sonu stok >= gün başı stok (ufuk-sonu boşaltma hilesini engeller)
+  max_sale_hours_ratio: 1.5 # satış kapasitesi = 1.5 x tam yük üretim hızı
+
+prices:
+  h2_tl_per_kg: 150.0       # PLACEHOLDER: hidrojen satış fiyatı (duyarlılık analizinde taranır)
+  epias_csv: null           # EPİAŞ Şeffaflık export'u; null ise sentetik PTF kullanılır
+  align_mode: cycle         # cycle | calendar  (aşağıya bakınız: prices.py)
+
+imbalance:                  # tahmin hatasının fiyatı (ASSUMPTION: gerçek marjı doğrulayın)
+  short_buy_factor: 1.03    # eksik enerji: fiyat x 1.03 ile kapatılır
+  long_sell_factor: 0.97    # fazla enerji: fiyat x 0.97 ile satılır
+
+study:
+  window_stride: 1          # kaydedilen test pencerelerinin her n'incisi
+  origin_hours: null        # örn. [0] -> sadece gece yarısı başlayan günler
+  h2_price_sweep: [0, 50, 100, 150, 200, 300]
+  solver_time_limit_s: 60

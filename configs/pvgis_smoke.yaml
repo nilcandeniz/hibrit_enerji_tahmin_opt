@@ -1,0 +1,44 @@
+# Karar katmanı için PVGIS (saatlik, çok yıllı) tahmin deneyi.
+# Kaggle (gerçek santral telemetrisi) çalışması configs/lstm.yaml'da kalır -> doğrulama.
+seed: 42
+
+data:
+  csv_path: data/processed/df_pvgis_syn.csv      # scripts/fetch_pvgis.py çıktısı (yerel saat, kW)
+  time_col: DATE_TIME
+  target: AC_POWER
+  freq: 1h
+  max_interp_gap: 3
+  past_features: [IRRADIATION, AMBIENT_TEMPERATURE, WIND_SPEED]   # rüzgâr hızı: meteorolojik girdi
+  future_calendar: [sin_time, cos_time, sin_day, cos_day]         # çok yıllı veri -> mevsim kodu
+  future_weather: [IRRADIATION, AMBIENT_TEMPERATURE]
+  weather_forecast:
+    mode: noisy           # none | oracle | noisy
+    noise_std: 0.20       # ışınım: çarpımsal hata (NWP hatası simülasyonu)
+    temp_noise_std_c: 1.5 # sıcaklık: toplamsal hata (°C)
+    rho: 0.8              # AR(1) otokorelasyon: hata saatler boyu sürer (bulut zamanlaması)
+  lookback: 48            # 2 gün geçmiş
+  horizon: 24             # 24 saat ileri
+  train_stride: 1
+  eval_stride: 1
+  split: [0.60, 0.20, 0.20]   # 5 yıl veride test ≈ son 1 yıl (tam mevsim döngüsü)
+
+model:
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.2
+
+training:
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  max_epochs: 15
+  patience: 4
+  device: auto
+
+tuning:                   # scripts/tune.py (yalnızca validation kullanılır)
+  trials_xgboost: 4
+  trials_rnn: 4          # LSTM ve GRU için ayrı ayrı (eşit bütçe)
+  max_epochs: 6
+  patience: 3
+
+output_dir: results/pvgis_smoke

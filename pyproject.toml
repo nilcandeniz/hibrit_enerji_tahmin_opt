@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solarh2"
+version = "0.1.0"
+description = "PV tahmini + MILP tabanlı şebeke/yeşil hidrojen karar destek sistemi"
+requires-python = ">=3.10"
+dependencies = ["numpy", "pandas", "scipy", "scikit-learn", "xgboost", "torch", "pyyaml", "matplotlib",
+                "pulp>=2.8,<4", "optuna"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+data = ["pvlib", "openpyxl"]   # PVGIS indirme/ayrıştırma ve EPİAŞ xlsx okuma
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore::DeprecationWarning:pulp.*"]

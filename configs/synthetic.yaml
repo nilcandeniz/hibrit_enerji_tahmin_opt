@@ -1,0 +1,39 @@
+# Deney konfigürasyonu — tüm hiperparametreler burada, kodda sabit değer yok.
+seed: 42
+
+data:
+  csv_path: data/processed/df_synthetic.csv   # 01_veri_kesfi çıktısı (lag'li df_features DEĞİL)
+  time_col: DATE_TIME
+  target: AC_POWER
+  freq: 15min
+  max_interp_gap: 4   # ≤1 saatlik boşluklar interpolasyonla doldurulur
+  # Geçmiş penceresinde (encoder) görülen ölçülmüş değişkenler. Hedef otomatik eklenir.
+  past_features: [IRRADIATION, AMBIENT_TEMPERATURE, MODULE_TEMPERATURE]
+  # Tahmin anında geleceği BİLİNEN değişkenler (decoder girdisi).
+  # Takvim özellikleri her zaman bilinir. Işınım/sıcaklık ise ancak bir hava tahmini
+  # varsa bilinir -> aşağıdaki weather_forecast ayarına bakın.
+  future_calendar: [sin_time, cos_time]
+  future_weather: [IRRADIATION, AMBIENT_TEMPERATURE]
+  weather_forecast:
+    mode: noisy        # none | oracle | noisy
+    noise_std: 0.15    # noisy modda çarpımsal hata (~%15 NWP hatası simülasyonu)
+  lookback: 96         # 24 saat geçmiş
+  horizon: 96          # 24 saat ileri (96 x 15 dk)
+  train_stride: 1
+  eval_stride: 4       # test pencereleri her saat başı
+  split: [0.70, 0.15, 0.15]   # train / val / test (kronolojik)
+
+model:
+  hidden_size: 64
+  num_layers: 2
+  dropout: 0.2
+
+training:
+  batch_size: 64
+  lr: 0.001
+  weight_decay: 0.0001
+  max_epochs: 100
+  patience: 10
+  device: auto
+
+output_dir: results/synthetic_run

@@ -17,3 +17,16 @@ data/processed/*
 # VS Code & Sistem dosyaları
 .vscode/
 .DS_Store
+# Model ağırlıkları ve sonuçlar
+*.pt
+results/
+
+# Optuna ve yerel veritabanları
+*.db
+*.sqlite3
+
+# Arşiv ve paket kalıntıları
+*.zip
+*.egg-info/
+bitirme/
+temp_v3/
