@@ -1,0 +1,42 @@
+{
+  "lstm": {
+    "params": {
+      "hidden_size": 64,
+      "num_layers": 2,
+      "dropout": 0.06677733084701157,
+      "lr": 0.000543510480462223,
+      "weight_decay": 2.8517497616528785e-05,
+      "batch_size": 32
+    },
+    "best_value": 0.018367376259728604,
+    "n_trials": 20,
+    "n_pruned": 11
+  },
+  "gru": {
+    "params": {
+      "hidden_size": 64,
+      "num_layers": 2,
+      "dropout": 0.06240745617697461,
+      "lr": 0.00016998978382700775,
+      "weight_decay": 1.493656855461763e-06,
+      "batch_size": 32
+    },
+    "best_value": 0.017180686468159952,
+    "n_trials": 20,
+    "n_pruned": 9
+  },
+  "xgboost": {
+    "params": {
+      "n_estimators": 400,
+      "max_depth": 5,
+      "learning_rate": 0.029803598780330703,
+      "subsample": 0.7983211653823218,
+      "colsample_bytree": 0.9509499788119775,
+      "min_child_weight": 3,
+      "reg_lambda": 0.004347344973305958
+    },
+    "best_value": 368.26544189453125,
+    "n_trials": 30,
+    "n_pruned": 0
+  }
+}
