@@ -26,29 +26,55 @@ def _tr_number(x) -> float:
     return float(s)
 
 
-def load_epias_csv(path: str) -> pd.Series:
-    """EPİAŞ Şeffaflık Platformu'ndan indirilen PTF dosyasını (csv/xlsx) saatlik Series'e çevirir.
+_PRICE_KEYS = {
+    "ptf": ("ptf", "mcp", "piyasa takas"),
+    "smf": ("smf", "smp", "sistem marjinal"),
+}
+_EXCLUDE = ("yön", "yon", "direction", "usd", "eur", "miktar", "volume")
 
-    Beklenen: bir tarih(+saat) sütunu ve adında 'PTF' geçen bir fiyat sütunu. Ayraç ve
-    Türkçe ondalık biçimi otomatik tanınır. DOSYANIZIN BAŞLIKLARI FARKLIYSA bu fonksiyonu
-    uyarlayın — gerçek bir export ile ilk kez çalıştırırken çıktıyı elle kontrol edin.
+
+def _pick_price_column(columns, kind: str) -> str:
+    """İstenen fiyat sütununu seçer: 'SMF Yön' gibi metin, USD/EUR ve miktar sütunlarını eler."""
+    keys = _PRICE_KEYS[kind]
+    cand = [c for c in columns
+            if any(k in c.lower() for k in keys) and not any(x in c.lower() for x in _EXCLUDE)]
+    if not cand:
+        raise ValueError(f"'{kind.upper()}' fiyat sütunu bulunamadı. Sütunlar: {list(columns)}")
+    tl = [c for c in cand if "tl" in c.lower()]
+    return (tl or cand)[0]
+
+
+def load_epias_series(path: str, kind: str = "ptf") -> pd.Series:
+    """EPİAŞ Şeffaflık Platformu export'unu (csv/xlsx) saatlik fiyat Series'ine çevirir.
+
+    kind: "ptf" (gün öncesi, piyasa takas fiyatı) | "smf" (dengeleme, sistem marjinal fiyatı).
+    Tarih ve saat ayrı sütunlarda veya tek sütunda olabilir; Türkçe ondalık biçimi
+    ('1.234,56') ve noktalı virgül ayıraç otomatik tanınır. Aynı dosyada hem PTF hem SMF
+    varsa `kind` ile istenen seçilir. İLK KEZ yeni bir export okurken çıktıyı elle kontrol edin.
     """
     if str(path).lower().endswith((".xlsx", ".xls")):
         df = pd.read_excel(path)          # openpyxl gerekir
     else:
         df = pd.read_csv(path, sep=None, engine="python", encoding="utf-8-sig")
-    price_col = next(c for c in df.columns if "ptf" in c.lower() or "mcp" in c.lower())
+    df.columns = [str(c).strip() for c in df.columns]
+    price_col = _pick_price_column(df.columns, kind)
     date_col = next(c for c in df.columns if c.lower().startswith(("tarih", "date")))
     ts = pd.to_datetime(df[date_col], dayfirst=True, errors="coerce", utc=False)
     if getattr(ts.dt, "tz", None) is not None:
         ts = ts.dt.tz_localize(None)
-    if "saat" in " ".join(df.columns).lower():  # tarih ve saat ayrı sütunlarda
-        hcol = next(c for c in df.columns if "saat" in c.lower() or c.lower() == "hour")
+    hcols = [c for c in df.columns if c.lower().startswith("saat") or c.lower() == "hour"]
+    if hcols:  # tarih ve saat ayrı sütunlarda
         ts = ts.dt.normalize() + pd.to_timedelta(
-            df[hcol].astype(str).str.extract(r"(\d+)")[0].astype(int), unit="h")
-    s = pd.Series(df[price_col].map(_tr_number).to_numpy(), index=ts).sort_index()
+            df[hcols[0]].astype(str).str.extract(r"(\d+)")[0].astype(int), unit="h")
+    s = pd.Series(df[price_col].map(_tr_number).to_numpy(), index=ts, name=kind.upper())
+    s = s.sort_index()
     s = s[~s.index.duplicated()].dropna()
     return s
+
+
+def load_epias_csv(path: str) -> pd.Series:
+    """Geriye dönük uyumluluk: PTF okur."""
+    return load_epias_series(path, "ptf")
 
 
 def validate_ptf(s: pd.Series, start=None, end=None) -> dict:

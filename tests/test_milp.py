@@ -98,3 +98,53 @@ def test_cycle_alignment_keeps_hourly_shape():
     out = align_prices(times, ptf, "cycle")
     assert out.shape == (T,) and not np.isnan(out).any()
     assert out[0] == out[3]            # saat içinde adım-sabit
+
+
+# ---------------- SMF / dengesizlik / gerçek zamanlı düzeltme ----------------
+from solarh2.optimization.evaluate import imbalance_prices
+from solarh2.optimization.prices import load_epias_series
+
+
+def test_imbalance_price_rule(cfg):
+    p = from_config(cfg, 8000.0)
+    ptf = np.array([1000.0, 2000.0])
+    smf = np.array([1500.0, 1200.0])
+    neg, pos = imbalance_prices(ptf, smf, p)
+    assert np.allclose(neg, [1.03 * 1500, 1.03 * 2000])
+    assert np.allclose(pos, [0.97 * 1000, 0.97 * 1200])
+
+
+def test_smf_loader_skips_direction_column(tmp_path):
+    from tests.make_synthetic_pvgis import make_epias_like
+    f = tmp_path / "smf.csv"
+    make_epias_like(str(f), "2023-01-01", 2, seed=0, kind="smf")
+    s = load_epias_series(str(f), "smf")
+    assert len(s) == 48 and s.dtype.kind == "f" and s.name == "SMF"
+    g = tmp_path / "smf.xlsx"
+    make_epias_like(str(g), "2023-01-01", 2, seed=0, kind="smf", xlsx=True)
+    assert np.allclose(load_epias_series(str(g), "smf").to_numpy(), s.to_numpy(), atol=0.01)
+
+
+@pytest.mark.parametrize("bias", [0.8, 1.2])
+def test_smf_spread_makes_errors_costlier(cfg, bias):
+    p = from_config(cfg, 8000.0, h2_price=150.0)
+    pv, price = day_pv(), day_price()
+    plan = solve_day_ahead(pv * bias, price, p)
+    flat = realize(plan, pv, price, p)                         # SMF = PTF
+    wide = realize(plan, pv, price, p, smf_tl_mwh=price * (0.5 if bias < 1 else 1.5))
+    assert wide["imbalance_penalty_tl"] > flat["imbalance_penalty_tl"]
+
+
+@pytest.mark.parametrize("bias", [0.8, 1.2])
+def test_recourse_helps_and_never_beats_oracle(cfg, bias):
+    p = from_config(cfg, 8000.0, h2_price=150.0)
+    pv, price = day_pv(), day_price()
+    # eksik tahmin -> fazla enerji -> SMF<PTF pahalı; fazla tahmin -> açık -> SMF>PTF pahalı
+    smf = price * (0.5 if bias < 1 else 1.5)
+    oracle = realize(solve_day_ahead(pv, price, p), pv, price, p, smf)["net_tl"]
+    plan = solve_day_ahead(pv * bias, price, p)
+    stiff = realize(plan, pv, price, p, smf, recourse=False)
+    rt = realize(plan, pv, price, p, smf, recourse=True)
+    assert rt["imbalance_penalty_tl"] <= stiff["imbalance_penalty_tl"] + 1e-6
+    assert rt["net_tl"] >= stiff["net_tl"] - 1e-6
+    assert rt["net_tl"] <= oracle + 1e-3

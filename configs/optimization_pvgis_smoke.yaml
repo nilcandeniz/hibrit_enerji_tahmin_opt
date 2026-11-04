@@ -30,14 +30,16 @@ tank:
 prices:
   h2_tl_per_kg: 150.0       # PLACEHOLDER: hidrojen satış fiyatı (duyarlılık analizinde taranır)
   epias_csv: data/raw/ptf_2023_synthetic.csv   # EPİAŞ Şeffaflık export'u (csv/xlsx); null -> sentetik PTF
+  smf_csv: data/raw/smf_2023_synthetic.csv
   align_mode: calendar      # calendar: PVGIS ve EPİAŞ aynı gerçek tarihler | cycle: senaryo
 
-imbalance:                  # tahmin hatasının fiyatı (ASSUMPTION: gerçek marjı doğrulayın)
-  short_buy_factor: 1.03    # eksik enerji: fiyat x 1.03 ile kapatılır
-  long_sell_factor: 0.97    # fazla enerji: fiyat x 0.97 ile satılır
+imbalance:                  # Türkiye kuralı: eksik 1.03 x max(PTF,SMF), fazla 0.97 x min(PTF,SMF)
+  short_buy_factor: 1.03    # (2023 için marjı resmi kaynaktan doğrulayın)
+  long_sell_factor: 0.97
 
 study:
-  window_stride: 1          # kaydedilen test pencerelerinin her n'incisi
+  window_stride: 1
+  recourse_modes: [false, true]   # plana sadık / gerçek zamanlı elektrolizör düzeltmesi
   origin_hours: [0]         # her gün 00:00'da başlayan 24 saatlik pencere (gün öncesi planı)
   h2_price_sweep: [0, 100, 200]
   solver_time_limit_s: 60

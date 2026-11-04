@@ -7,7 +7,6 @@ Kullanım:
 from __future__ import annotations
 
 import argparse
-import copy
 import json
 from pathlib import Path
 
@@ -21,12 +20,7 @@ import torch
 from solarh2.config import load_config, set_seed
 from solarh2.data.windowing import build_windows
 from solarh2.evaluation.metrics import compute_metrics, rmse_by_horizon
-from solarh2.models.baselines import XGBHorizonModel, persistence
-from solarh2.models.seq2seq import Seq2SeqRNN
-from solarh2.training.trainer import predict, train_model
-
-RNN_HP = ("hidden_size", "num_layers", "dropout")
-TRAIN_HP = ("lr", "weight_decay", "batch_size")
+from solarh2.pipeline import fit_and_predict
 
 
 def main():
@@ -49,28 +43,10 @@ def main():
           "| hiperparametreler:", "OPTUNA" if tuned else "config varsayılanı")
     capacity = float(np.nanmax(tr.y_raw))
 
-    preds = {"Persistence": persistence(te)}
-    histories = {}
-
-    if "xgboost" in args.models:
-        xp = {k: v for k, v in tuned.get("xgboost", {}).get("params", {}).items()}
-        xgb = XGBHorizonModel(random_state=cfg["seed"], **xp).fit(tr, va)
-        preds["XGBoost"] = xgb.predict(te)
-
-    for cell in ("lstm", "gru"):
-        if cell not in args.models:
-            continue
-        set_seed(cfg["seed"])
-        hp = dict(cfg["model"])
-        c = copy.deepcopy(cfg)
-        for k, v in tuned.get(cell, {}).get("params", {}).items():
-            (hp if k in RNN_HP else c["training"])[k] = v
-        print(f"\n--- {cell.upper()} ---  {hp}  lr={c['training']['lr']:.2e} bs={c['training']['batch_size']}")
-        model = Seq2SeqRNN(tr.x_past.shape[-1], tr.x_future.shape[-1], cell=cell, **hp)
-        model, hist = train_model(model, tr, va, c)
-        preds[cell.upper()] = predict(model, te, scalers["y"], cfg["training"]["device"])
-        histories[cell] = hist
-        torch.save(model.state_dict(), out / f"{cell}_best.pt")
+    preds, histories, fitted = fit_and_predict(cfg, splits, scalers, tuned, args.models)
+    for name, m in fitted.items():
+        if name in ("LSTM", "GRU"):
+            torch.save(m.state_dict(), out / f"{name.lower()}_best.pt")
 
     rows = {name: compute_metrics(te.y_raw, p, capacity, te.daytime, preds["Persistence"])
             for name, p in preds.items()}

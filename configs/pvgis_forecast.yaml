@@ -12,10 +12,14 @@ data:
   future_calendar: [sin_time, cos_time, sin_day, cos_day]         # çok yıllı veri -> mevsim kodu
   future_weather: [IRRADIATION, AMBIENT_TEMPERATURE]
   weather_forecast:
-    mode: noisy           # none | oracle | noisy
-    noise_std: 0.20       # ışınım: çarpımsal hata (NWP hatası simülasyonu)
-    temp_noise_std_c: 1.5 # sıcaklık: toplamsal hata (°C)
-    rho: 0.8              # AR(1) otokorelasyon: hata saatler boyu sürer (bulut zamanlaması)
+    # lead_time: her tahmin yayını (pencere) kendi hatasını alır; hata ufukla doğrusal büyür.
+    # Ortalama düzey (~%19) önceki sabit %20'lik "noisy" ayarıyla karşılaştırılabilir.
+    # Değerleri NWP literatürüyle kalibre edin (gün öncesi saatlik GHI hataları).
+    mode: lead_time        # none | oracle | noisy (eski) | lead_time
+    noise_std: [0.08, 0.30]        # ışınım: çarpımsal std, h=1 -> h=24
+    temp_noise_std_c: [0.5, 2.0]   # sıcaklık: toplamsal std (°C), h=1 -> h=24
+    rho: 0.8                       # ufuk boyunca AR(1) korelasyon
+    noise_scale: 1.0               # tahmin hatası taraması bunu değiştirir (0 = mükemmel hava tahmini)
   lookback: 48            # 2 gün geçmiş
   horizon: 24             # 24 saat ileri
   train_stride: 1

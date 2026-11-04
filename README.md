@@ -38,6 +38,23 @@ python scripts/train_compare.py --config configs/pvgis_forecast.yaml --tuned res
 python scripts/run_optimization.py --config configs/optimization_pvgis.yaml
 ```
 
+**C. Senaryo analizleri (önerideki 11-12. hafta)**
+```
+# (c) Çoklu seed + Diebold-Mariano: "GRU > LSTM" iddiasının sağlamlığı
+python scripts/multi_seed.py --config configs/pvgis_forecast.yaml \
+       --tuned results/pvgis_run/tuning/best_params.json --seeds 0 1 2 3 4
+# (b) Tahmin hatası taraması: hata düzeyi -> nRMSE -> TL kaybı (her düzeyde modeller yeniden eğitilir)
+python scripts/forecast_value_sweep.py --config configs/pvgis_forecast.yaml \
+       --opt-config configs/optimization_pvgis.yaml \
+       --tuned results/pvgis_run/tuning/best_params.json --levels 0 0.5 1 1.5 2
+```
+(a) SMF'li dengesizlik ve gerçek zamanlı düzeltme `run_optimization.py` içinde kendiliğinden çalışır
+(`prices.smf_csv`, `study.recourse_modes`).
+
+**Colab (GPU):** `!git clone <repo> && cd <repo> && pip install -e ".[data]"`; veriyi `data/` altına
+yükleyin (Drive'dan kopyalayın). LSTM/GRU GPU'yu kendiliğinden kullanır; MILP CPU'da çalışır.
+Uzun koşularda `results/`'ı Drive'a kopyalamayı unutmayın (Colab oturumu kapanınca silinir).
+
 **Optuna notları:** Arama `<output_dir>/tuning/optuna.db` dosyasına kaydedilir; Ctrl+C ile kesip
 aynı komutu tekrar çalıştırırsan kaldığı yerden devam eder. Modeller parça parça da koşulabilir
 (`--only xgboost`, `--only lstm`, `--only gru`); sonuçlar `best_params.json` içinde birleşir.
@@ -65,8 +82,12 @@ aynı komutu tekrar çalıştırırsan kaldığı yerden devam eder. Modeller pa
 ## Bilinen sınırlar
 - `PLACEHOLDER` işaretli parametreler (elektrolizör boyutu/verimi, başlatma maliyeti, H2 fiyatı)
   literatürle doldurulmalı ve duyarlılık analizine sokulmalıdır.
-- Dengesizlik cezası SMF = PTF varsayar (alt sınır); ±%3 marj doğrulanmamış varsayımdır.
-- Hava tahmini girdisi **simüle** edilir (gerçek NWP arşivi yok); hata düzeyi config'te açıktır.
+- Dengesizlik: eksik 1,03·max(PTF,SMF), fazla 0,97·min(PTF,SMF). %3 marjın 2023 için geçerliliği
+  resmi kaynaktan doğrulanmalı. SMF verilmezse SMF = PTF (iyimser) varsayılır.
+- Gerçek zamanlı düzeltme miyoptur (yalnızca o saatin marjinal değerlerine bakar) ve kapalı
+  elektrolizörü açmaz; bu yüzden hibrit sistemin tampon değerini *alt sınırdan* ölçer.
+- Hava tahmini girdisi **simüle** edilir (gerçek NWP arşivi yok): her pencere ayrı bir tahmin
+  yayınıdır, hata ufukla doğrusal büyür (`lead_time`). Düzeyler NWP literatürüyle kalibre edilmeli.
 - Gün öncesi planı 00:00 penceresiyle yapılır; gerçek piyasada teklif ~ önceki gün öğlen verilir
   (son gözlemden ~14 saat boşluk). Bu boşluk modellenmemiştir.
 - EPİAŞ okuyucusu gerçek bir export ile henüz denenmemiştir (sentetik csv/xlsx ile test edildi).

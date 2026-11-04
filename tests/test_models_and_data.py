@@ -76,3 +76,45 @@ def test_optuna_smoke(tmp_path):
     best = save_results(studies, tmp_path / "t")
     assert set(best) == {"xgboost", "gru"} and (tmp_path / "t/best_params.json").exists()
     assert "hidden_size" in best["gru"]["params"] and "max_depth" in best["xgboost"]["params"]
+
+
+# ---------------- ufka bağlı hata / DM testi ----------------
+def _lead_cfg(tmp_path):
+    from tests.make_synthetic_pvgis import make_pvgis_csv
+    raw = tmp_path / "raw.csv"
+    make_pvgis_csv(str(raw), 2022, 2022)
+    csv = tmp_path / "pv.csv"
+    load_pvgis_csv(raw).to_csv(csv, index=False)
+    cfg = load_config(ROOT / "configs/pvgis_forecast.yaml")
+    cfg["data"]["csv_path"] = str(csv)
+    return cfg
+
+
+def test_lead_time_noise_grows_with_horizon_and_scale_zero_is_exact(tmp_path):
+    import copy
+    cfg = _lead_cfg(tmp_path)
+    (sp, sc) = build_windows(cfg, seed=1)
+    c0 = copy.deepcopy(cfg); c0["data"]["weather_forecast"]["noise_scale"] = 0.0
+    (sp0, sc0) = build_windows(c0, seed=1)
+    j = sc["future_cols"].index("IRRADIATION__fcst")
+    inv = lambda ws, s: s["future"].inverse_transform(
+        ws.x_future.reshape(-1, ws.x_future.shape[-1])).reshape(ws.x_future.shape)
+    f, f0 = inv(sp["test"], sc), inv(sp0["test"], sc0)
+    day = sp["test"].daytime
+    rel = lambda h: np.std((f[:, h, j] - f0[:, h, j])[day[:, h]] / np.maximum(f0[:, h, j][day[:, h]], 1e-3))
+    assert rel(23) > 2 * rel(0) > 0
+    assert np.array_equal(sp["test"].times, sp0["test"].times)        # aynı test pencereleri
+    # noise_scale=0 -> decoder'a giren "tahmin" ışınımı = gerçekleşen ışınım
+    actual = pd.read_csv(cfg["data"]["csv_path"], parse_dates=["DATE_TIME"]).set_index("DATE_TIME")
+    true_irr = actual["IRRADIATION"].reindex(pd.DatetimeIndex(sp0["test"].times.ravel())).to_numpy()
+    assert np.allclose(f0[:, :, j].ravel(), true_irr, atol=1e-5)
+
+
+def test_diebold_mariano_detects_and_rejects():
+    from solarh2.evaluation.metrics import diebold_mariano
+    rng = np.random.default_rng(0)
+    base = rng.gamma(2.0, 1.0, 365)
+    same = diebold_mariano(base + rng.normal(0, 0.3, 365), base + rng.normal(0, 0.3, 365))
+    better = diebold_mariano(base * 0.8, base)
+    assert same["p_value"] > 0.05
+    assert better["p_value"] < 0.01 and better["DM"] < 0

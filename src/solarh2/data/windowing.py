@@ -59,9 +59,54 @@ def load_frame(cfg: dict) -> pd.DataFrame:
 def _future_columns(d: dict) -> list[str]:
     mode = d["weather_forecast"]["mode"]
     cols = list(d["future_calendar"])
-    if mode in ("oracle", "noisy"):
+    if mode in ("oracle", "noisy", "lead_time"):
         cols += [f"{c}__fcst" for c in d["future_weather"]]
     return cols
+
+
+def _lead_time_spec(wf: dict, weather: list[str], fut_cols: list[str], H: int):
+    """mode='lead_time' için ufka bağlı hata profili; diğer modlarda None.
+
+    noise_std: [h=1'deki, h=H'deki] çarpımsal std (ışınım ve diğerleri)
+    temp_noise_std_c: [h=1, h=H] toplamsal std (°C) — AMBIENT_TEMPERATURE için
+    noise_scale: tüm hata düzeyini ölçekler (tahmin hatası taraması bunu değiştirir)
+    """
+    if wf["mode"] != "lead_time":
+        return None
+    k = float(wf.get("noise_scale", 1.0))
+    ramp = lambda a: k * np.linspace(float(a[0]), float(a[1]), H)
+    spec = []
+    for c in weather:
+        j = fut_cols.index(f"{c}__fcst")
+        if c == "AMBIENT_TEMPERATURE":
+            spec.append((j, "add", ramp(wf.get("temp_noise_std_c", [0.5, 1.5])), False))
+        else:
+            spec.append((j, "mul", ramp(wf["noise_std"]), c == "IRRADIATION"))
+    return dict(spec=spec, rho=float(wf.get("rho", 0.0)))
+
+
+def _ar1_along_horizon(rng, N: int, H: int, rho: float) -> np.ndarray:
+    """(N, H) birim varyanslı, ufuk boyunca AR(1) korelasyonlu standart normal gürültü."""
+    e = rng.standard_normal((N, H))
+    if rho <= 0:
+        return e
+    z = np.empty_like(e)
+    z[:, 0] = e[:, 0]
+    a = np.sqrt(1 - rho ** 2)
+    for h in range(1, H):
+        z[:, h] = rho * z[:, h - 1] + a * e[:, h]
+    return z
+
+
+def _apply_lead_noise(fr: np.ndarray, lead: dict, rng) -> np.ndarray:
+    fr = fr.copy()
+    N, H, _ = fr.shape
+    for j, kind, std, nonneg in lead["spec"]:
+        z = _ar1_along_horizon(rng, N, H, lead["rho"]) * std[None, :]
+        fr[:, :, j] = fr[:, :, j] + z if kind == "add" else fr[:, :, j] * (1 + z)
+        if nonneg:
+            fr[:, :, j] = np.clip(fr[:, :, j], 0, None)
+    return fr
 
 
 def build_windows(cfg: dict, df: pd.DataFrame | None = None, seed: int = 0):
@@ -90,7 +135,7 @@ def build_windows(cfg: dict, df: pd.DataFrame | None = None, seed: int = 0):
         return z
 
     for c in d["future_weather"]:
-        fc = df[c].copy()
+        fc = df[c].copy()      # "oracle" ve "lead_time": burada gerçek değer (lead_time gürültüsü pencerede)
         if wf["mode"] == "noisy":
             z = unit_noise(len(fc))
             if c == "AMBIENT_TEMPERATURE" and "temp_noise_std_c" in wf:
@@ -111,18 +156,20 @@ def build_windows(cfg: dict, df: pd.DataFrame | None = None, seed: int = 0):
 
     # Ölçekleyiciler SADECE train bölgesine fit edilir
     sc_past = StandardScaler().fit(df[past_cols].iloc[:b1].dropna())
-    sc_fut = StandardScaler().fit(df[fut_cols].iloc[:b1].dropna())
+    sc_fut = StandardScaler().fit(df[fut_cols].iloc[:b1].dropna().to_numpy())
     sc_y = StandardScaler().fit(df[[target]].iloc[:b1].dropna())
 
     past = sc_past.transform(df[past_cols].fillna(0)).astype(np.float32)
-    fut = sc_fut.transform(df[fut_cols].fillna(0)).astype(np.float32)
+    fut_raw = df[fut_cols].fillna(0).to_numpy(dtype=np.float64)
+    fut = sc_fut.transform(fut_raw).astype(np.float32)
+    lead = _lead_time_spec(wf, d["future_weather"], fut_cols, H)
     y_raw = df[target].to_numpy(dtype=np.float32)
     y_sc = sc_y.transform(df[[target]].fillna(0)).ravel().astype(np.float32)
     valid = df[past_cols + fut_cols].notna().all(axis=1).to_numpy()
     irr = df["IRRADIATION"].to_numpy() if "IRRADIATION" in df else y_raw
     times = df.index.to_numpy()
 
-    def make(origin_lo: int, origin_hi: int, stride: int) -> WindowSet:
+    def make(origin_lo: int, origin_hi: int, stride: int, split_id: int) -> WindowSet:
         # origin = tahmin edilen ilk adımın indeksi; hedef aralığı [o, o+H)
         idx = []
         lo = max(origin_lo, L, DAY)  # persistence için 24 saat geriye erişim gerekir
@@ -133,7 +180,13 @@ def build_windows(cfg: dict, df: pd.DataFrame | None = None, seed: int = 0):
         if len(idx) == 0:
             raise ValueError("Bu bölmede hiç geçerli pencere yok — lookback/horizon/split'i kontrol edin.")
         p = np.stack([past[o - L:o] for o in idx])
-        f = np.stack([fut[o:o + H] for o in idx])
+        if lead is None:
+            f = np.stack([fut[o:o + H] for o in idx])
+        else:
+            # Her pencere = ayrı bir tahmin yayını -> kendi hata gerçekleşmesi (split'e özgü RNG)
+            fr = np.stack([fut_raw[o:o + H] for o in idx])
+            fr = _apply_lead_noise(fr, lead, np.random.default_rng([seed, split_id]))
+            f = sc_fut.transform(fr.reshape(-1, fr.shape[-1])).reshape(fr.shape).astype(np.float32)
         tgt = np.stack([y_sc[o:o + H] for o in idx])
         tgt_raw = np.stack([y_raw[o:o + H] for o in idx])
         lag = np.stack([y_raw[o - DAY + np.arange(H)] for o in idx])
@@ -142,9 +195,9 @@ def build_windows(cfg: dict, df: pd.DataFrame | None = None, seed: int = 0):
         return WindowSet(p, f, tgt, tgt_raw, lag, day, t)
 
     splits = {
-        "train": make(0, b1, d["train_stride"]),
-        "val": make(b1, b2, d["eval_stride"]),
-        "test": make(b2, n, d["eval_stride"]),
+        "train": make(0, b1, d["train_stride"], 0),
+        "val": make(b1, b2, d["eval_stride"], 1),
+        "test": make(b2, n, d["eval_stride"], 2),
     }
     scalers = {"past": sc_past, "future": sc_fut, "y": sc_y,
                "past_cols": past_cols, "future_cols": fut_cols}

@@ -54,19 +54,37 @@ def make_pvgis_csv(path: str, start_year: int = 2021, end_year: int = 2023,
                 "WS10m: 10-m total wind speed (m/s)\nInt: 1 means solar radiation values are reconstructed\n")
 
 
-def make_epias_like(path: str, start: str, days: int, seed: int = 0, xlsx: bool = False) -> None:
-    """EPİAŞ'a benzer export: Tarih;Saat;PTF (TL/MWh) ve Türkçe sayı biçimi ('1.234,56')."""
+def make_epias_like(path: str, start: str, days: int, seed: int = 0, xlsx: bool = False,
+                    kind: str = "ptf") -> None:
+    """EPİAŞ'a benzer export. kind="ptf": Tarih;Saat;PTF (TL/MWh)
+    kind="smf": Tarih;Saat;SMF (TL/MWh);SMF Yön  (metin sütunu yükleyiciyi sınamak için)
+    Türkçe sayı biçimi ('1.234,56'). SMF = PTF etrafında otokorelasyonlu sapma + sıçramalar."""
     from solarh2.optimization.prices import synthetic_ptf
     s = synthetic_ptf(days, seed, start=start)
+    col = "PTF (TL/MWh)"
+    extra = None
+    if kind == "smf":
+        rng = np.random.default_rng(seed + 100)
+        z = np.zeros(len(s))
+        for t in range(1, len(s)):
+            z[t] = 0.7 * z[t - 1] + 0.3 * rng.standard_normal()
+        spikes = rng.random(len(s)) < 0.03
+        v = s.to_numpy() * (1 + 0.6 * z) + spikes * rng.choice([-1500, 1500], len(s))
+        s = pd.Series(np.clip(v, 0, 4500), index=s.index)
+        col = "SMF (TL/MWh)"
+        extra = np.where(z > 0.05, "Enerji Açığı", np.where(z < -0.05, "Enerji Fazlası", "Dengede"))
     if xlsx:
-        pd.DataFrame({"Tarih": s.index.strftime("%d.%m.%Y"), "Saat": s.index.strftime("%H:%M"),
-                      "PTF (TL/MWh)": s.to_numpy().round(2)}).to_excel(path, index=False)
+        d = {"Tarih": s.index.strftime("%d.%m.%Y"), "Saat": s.index.strftime("%H:%M"),
+             col: s.to_numpy().round(2)}
+        if extra is not None:
+            d["SMF Yön"] = extra
+        pd.DataFrame(d).to_excel(path, index=False)
         return
     tr = lambda v: f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     with open(path, "w", encoding="utf-8-sig") as f:
-        f.write("Tarih;Saat;PTF (TL/MWh)\n")
-        for t, v in s.items():
-            f.write(f"{t:%d.%m.%Y};{t:%H:%M};\"{tr(v)}\"\n")
+        f.write(f"Tarih;Saat;{col}" + (";SMF Yön" if extra is not None else "") + "\n")
+        for k, (t, v) in enumerate(s.items()):
+            f.write(f"{t:%d.%m.%Y};{t:%H:%M};\"{tr(v)}\"" + (f";{extra[k]}" if extra is not None else "") + "\n")
 
 
 if __name__ == "__main__":
