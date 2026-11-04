@@ -1,8 +1,12 @@
-,Net gelir (TL/gün),Oracle'a göre kayıp (%),H2 (kg/gün),Dengesizlik net cezası (TL/gün),Eksik enerji (kWh/gün),Başlatma (adet/gün)
-Oracle (mükemmel tahmin),95245.25,0.0,244.41,0.0,0.0,0.9
-MILP + LSTM,94879.03,0.38,240.91,216.78,1511.71,0.91
-MILP + GRU,94883.18,0.38,241.26,224.06,1693.76,0.9
-MILP + XGBoost,94884.19,0.38,241.6,244.31,1755.26,0.91
-MILP + Persistence,93974.17,1.33,230.47,663.1,4972.66,0.92
-Sadece şebeke (LSTM tahmini),84387.84,11.4,0.0,225.97,1685.87,0.0
-Sadece şebeke (oracle),84613.81,11.16,0.0,0.0,0.0,0.0
+,Net gelir (TL/gün),Oracle'a göre kayıp (TL/gün),Oracle'a göre kayıp (%),H2 (kg/gün),Dengesizlik net cezası (TL/gün),Eksik enerji (kWh/gün),Fazla enerji (kWh/gün),H2'ye emilen sapma (kWh/gün),Başlatma (adet/gün)
+Oracle (mükemmel tahmin),95245.25,0.0,0.0,244.41,0.0,0.0,66.38,0.0,0.9
+MILP + LSTM,94265.95,979.3,1.03,241.35,854.91,1399.5,2144.44,0.0,0.91
+MILP + LSTM + RT düzeltme,94394.57,850.68,0.89,242.38,786.07,1314.13,2002.42,144.69,0.95
+MILP + GRU,94270.48,974.77,1.02,241.5,853.15,1492.02,2056.19,0.0,0.91
+MILP + GRU + RT düzeltme,94405.68,839.57,0.88,242.45,777.93,1399.73,1911.94,145.94,0.93
+MILP + XGBoost,94179.38,1065.87,1.12,241.71,955.66,1841.92,2099.47,0.0,0.9
+MILP + XGBoost + RT düzeltme,94309.26,935.99,0.98,241.84,869.03,1717.83,1968.05,133.97,0.93
+MILP + Persistence,91549.72,3695.52,3.88,230.47,3087.54,4972.66,5804.4,0.0,0.92
+MILP + Persistence + RT düzeltme,92217.4,3027.85,3.18,236.98,2757.74,4709.79,5185.13,621.53,0.98
+Sadece şebeke (LSTM tahmini),83711.97,11533.27,12.11,0.0,901.83,1592.46,2069.14,0.0,0.0
+Sadece şebeke (oracle),84613.81,10631.44,11.16,0.0,0.0,0.0,0.0,0.0,0.0
